@@ -48,7 +48,7 @@ public abstract class ImageSegmentor {
   /** Number of results to show in the UI. */
   private static final int RESULTS_TO_SHOW = 3;
 
-  /** Dimensions of inputs. */
+  /** Dimensions of inputs. 输入的维度*/
   private static final int DIM_BATCH_SIZE = 1;
 
   private static final int DIM_PIXEL_SIZE = 3;
@@ -59,16 +59,18 @@ public abstract class ImageSegmentor {
   /** Options for configuring the Interpreter. */
   private final Interpreter.Options tfliteOptions = new Interpreter.Options();
 
-  /** The loaded TensorFlow Lite model. */
+  /** The loaded TensorFlow Lite model. tensorflow-lite model*/
   private MappedByteBuffer tfliteModel;
 
-  /** An instance of the driver class to run model inference with Tensorflow Lite. */
+  /** An instance of the driver class to run model inference with Tensorflow Lite.
+   * 用Tensorflow-lite运行模型的实例 */
   protected Interpreter tflite;
 
-  /** Labels corresponding to the output of the vision model. */
+  /** Labels corresponding to the output of the vision model. 标签集 */
   private List<String> labelList;
 
-  /** A ByteBuffer to hold image data, to be feed into Tensorflow Lite as inputs. */
+  /** A ByteBuffer to hold image data, to be feed into Tensorflow Lite as inputs.
+   * Tensorflow的输入是Bytebuffer*/
   protected ByteBuffer imgData = null;
 
   /** A background image**/

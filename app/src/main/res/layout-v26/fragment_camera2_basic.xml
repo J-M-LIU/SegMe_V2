@@ -20,6 +20,12 @@
     android:background="#bb7700">
 
     <com.example.android.tflitecamerademo4.AutoFitTextureView
+        android:id="@+id/remoteTexture"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_weight="1" />
+
+    <com.example.android.tflitecamerademo4.AutoFitTextureView
         android:id="@+id/texture"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -33,7 +39,6 @@
         android:scaleType="fitStart"
         app:srcCompat="@drawable/dock_vbig" />
         -->
-
     <jp.co.cyberagent.android.gpuimage.GPUImageView
         android:id="@+id/gpuimageview"
         android:layout_width="match_parent"
@@ -42,6 +47,14 @@
         android:scaleType="fitStart"
         app:gpuimage_show_loading="false"
         app:gpuimage_surface_type="texture_view" />
+
+    <TextureView
+        android:id="@+id/segview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitStart"
+        android:layout_above="@+id/details"/>
+
 
     <LinearLayout
         android:id="@+id/details"

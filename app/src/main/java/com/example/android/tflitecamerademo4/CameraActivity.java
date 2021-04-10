@@ -16,10 +16,14 @@ limitations under the License.
 package com.example.android.tflitecamerademo4;
 
 import android.app.Activity;
+import android.app.Fragment;
 import android.os.Bundle;
 import android.util.Log;
 
+import com.example.android.utils.Constants;
+
 import org.opencv.android.OpenCVLoader;
+
 
 /** Main {@code Activity} class for the Camera app. */
 public class CameraActivity extends Activity {
@@ -27,13 +31,22 @@ public class CameraActivity extends Activity {
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    String channelName = getIntent().getStringExtra(Constants.ACTION_KEY_CHANNEL_NAME);
+    Bundle bundle = new Bundle();
+    //3.存入数据到Bundle对象中
+    bundle.putString("channel",channelName);
+    //4.调用Fragment的setArguments方法，传入Bundle对象
+
     setContentView(R.layout.activity_camera);
     if (null == savedInstanceState) {
+      Camera2BasicFragment fragment=new Camera2BasicFragment();
+      fragment.setArguments(bundle);
       getFragmentManager()
           .beginTransaction()
-          .replace(R.id.container, Camera2BasicFragment.newInstance())
+          .replace(R.id.container, fragment)
           .commit();
     }
+
 
     if (!OpenCVLoader.initDebug())
       Log.e("OpenCv", "Unable to load OpenCV");

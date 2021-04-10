@@ -38,7 +38,7 @@
             android:layout_width="wrap_content"
             android:layout_height="47dp"
             android:scaleType="centerInside"
-            android:src="@drawable/logo"/>
+            android:src="@drawable/fusion"/>
 
         <TextView
             android:id="@+id/text"

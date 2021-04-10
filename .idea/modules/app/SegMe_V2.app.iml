@@ -65,5 +65,6 @@
     <orderEntry type="library" name="Gradle: org.tensorflow:tensorflow-lite-gpu:0.0.0-nightly@aar" level="project" />
     <orderEntry type="library" name="Gradle: com.quickbirdstudios:opencv:4.1.0@aar" level="project" />
     <orderEntry type="library" name="Gradle: jp.co.cyberagent.android:gpuimage:2.0.3@aar" level="project" />
+    <orderEntry type="library" name="Gradle: io.agora.rtc:full-sdk:3.1.0@aar" level="project" />
   </component>
 </module>

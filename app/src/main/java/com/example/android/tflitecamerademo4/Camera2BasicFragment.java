@@ -28,11 +28,14 @@ import android.content.res.AssetManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
+import android.graphics.Paint;
 import android.graphics.Point;
 import android.graphics.PorterDuff;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
@@ -54,6 +57,7 @@ import android.support.annotation.NonNull;
 import android.support.v4.content.ContextCompat;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.Size;
 import android.view.Gravity;
@@ -64,14 +68,13 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.NumberPicker;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.support.v13.app.FragmentCompat;
-
+import com.example.android.utils.Constants;
 
 import com.example.android.tflitecamerademo.ScriptC_saturation;
 
@@ -91,7 +94,10 @@ import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
-import jp.co.cyberagent.android.gpuimage.GPUImage;
+import io.agora.rtc.IRtcEngineEventHandler;
+import io.agora.rtc.RtcEngine;
+
+import io.agora.rtc.video.VideoCanvas;
 import jp.co.cyberagent.android.gpuimage.GPUImageView;
 import jp.co.cyberagent.android.gpuimage.filter.GPUImageContrastFilter;
 import jp.co.cyberagent.android.gpuimage.filter.GPUImageEmbossFilter;
@@ -125,7 +131,11 @@ public class Camera2BasicFragment extends Fragment
   private ListView filterView;
   public SeekBar seekBar;
   public GPUImageView gpuImageView;
+  public TextureView segview;
+  public TextureView mRemoteView;
   public GPUImageToneCurveFilter curve_filter;
+  public String channel;
+
   InputStream is=null;
   public Bitmap bgd, bgd1, bgd2, bgd3 = null;
   public Boolean init=false;
@@ -149,6 +159,7 @@ public class Camera2BasicFragment extends Fragment
    * {@link TextureView.SurfaceTextureListener} handles several lifecycle events on a {@link
    * TextureView}.
    */
+  //Android利用TextureView展示在线视频流
   private final TextureView.SurfaceTextureListener surfaceTextureListener =
       new TextureView.SurfaceTextureListener() {
 
@@ -169,9 +180,32 @@ public class Camera2BasicFragment extends Fragment
 
         @Override
         public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
+
       };
 
-  // Model parameter constants.
+
+  private final TextureView.SurfaceTextureListener segviewListener=new TextureView.SurfaceTextureListener() {
+    @Override
+    public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int i, int i1) {
+
+    }
+
+    @Override
+    public void onSurfaceTextureSizeChanged(SurfaceTexture surfaceTexture, int i, int i1) {
+
+    }
+
+    @Override
+    public boolean onSurfaceTextureDestroyed(SurfaceTexture surfaceTexture) {
+      return true;
+    }
+
+    @Override
+    public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {
+
+    }
+  };
+  // Model parameter constants. 模型参数
   private String gpu;
   private String cpu;
   private String nnApi;
@@ -366,7 +400,9 @@ public class Camera2BasicFragment extends Fragment
   @Override
   public View onCreateView(
       LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-    return inflater.inflate(R.layout.fragment_camera2_basic, container, false);
+      Bundle b = this.getArguments();
+      channel = b.getString("channel");
+      return inflater.inflate(R.layout.fragment_camera2_basic, container, false);
   }
 
 
@@ -475,12 +511,16 @@ public class Camera2BasicFragment extends Fragment
     // Get references to widgets.
     textureView = (AutoFitTextureView) view.findViewById(R.id.texture);
     textView = (TextView) view.findViewById(R.id.text);
+    mRemoteView=(TextureView)view.findViewById(R.id.remoteTexture);
     deviceView = (ListView) view.findViewById(R.id.device);
     filterView = (ListView) view.findViewById(R.id.model);
 
+    segview=(TextureView)view.findViewById(R.id.segview);
+//    segview.setOpaque(true);
+    segview.setSurfaceTextureListener(segviewListener);
     //GPUImage
     gpuImageView = (GPUImageView) view.findViewById(R.id.gpuimageview);
-    Bitmap splash = BitmapFactory.decodeResource(getResources(),R.drawable.tf);
+    Bitmap splash = BitmapFactory.decodeResource(getResources(),R.drawable.fusion);
 
     Bitmap newsplash=Bitmap.createScaledBitmap(
               splash,1024 ,1024 , false);
@@ -613,7 +653,8 @@ public class Camera2BasicFragment extends Fragment
           }
         });
 
-    // Start initial model.
+
+     // Start initial model.
 
       // Load a caffe network.
       String proto = getPath("deploy_512.prototxt", getContext());
@@ -658,6 +699,8 @@ public class Camera2BasicFragment extends Fragment
   @Override
   public void onActivityCreated(Bundle savedInstanceState) {
     super.onActivityCreated(savedInstanceState);
+    //渲染在TextureView后joinchannel
+    joinChannel();
     startBackgroundThread();
   }
 
@@ -674,6 +717,7 @@ public class Camera2BasicFragment extends Fragment
       openCamera(textureView.getWidth(), textureView.getHeight());
     } else {
       textureView.setSurfaceTextureListener(surfaceTextureListener);
+
     }
   }
 
@@ -934,22 +978,20 @@ public class Camera2BasicFragment extends Fragment
       };
 
   /** Creates a new {@link CameraCaptureSession} for camera preview. */
+  private SurfaceTexture surfaceTexture;
   private void createCameraPreviewSession() {
     try {
-      SurfaceTexture texture = textureView.getSurfaceTexture();
-      assert texture != null;
-
-      // We configure the size of default buffer to be the size of camera preview we want.
-      texture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-
-      // This is the output Surface we need to start preview.
-      Surface surface = new Surface(texture);
-
-      // We set up a CaptureRequest.Builder with the output Surface.
+      surfaceTexture = textureView.getSurfaceTexture();
+      assert surfaceTexture != null;
+//       We configure the size of default buffer to be the size of camera preview we want.
+      surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
+//       This is the output Surface we need to start preview.
+      Surface surface = new Surface(surfaceTexture);
+//       We set up a CaptureRequest.Builder with the output Surface.
       previewRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
       previewRequestBuilder.addTarget(surface);
-
-      // Here, we create a CameraCaptureSession for camera preview.
+//
+//       Here, we create a CameraCaptureSession for camera preview.
       cameraDevice.createCaptureSession(
           Arrays.asList(surface),
           new CameraCaptureSession.StateCallback() {
@@ -1055,13 +1097,27 @@ public class Camera2BasicFragment extends Fragment
       @Override
       public void run() {
 
-        if(segmentor!=null && segmentor.result!=null)
-        gpuImageView.setImage(segmentor.result); // this loads image on the current thread, should be run in a thread
-
+        if(segmentor!=null && segmentor.result!=null){
+//          gpuImageView.setImage(segmentor.result); // this loads image on the current thread, should be run in a thread
+           drawBitmap(segmentor.result);
+        }
       }
     });
 
 
+  }
+
+  //在texture上绘制分割后图像
+  private Rect mSrcRect=new Rect();
+  private Rect mDstRect=new Rect();
+  private Paint mPaint=new Paint();
+  public void drawBitmap(Bitmap bitmap){
+    Canvas canvas = segview.lockCanvas();//锁定画布
+    canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);// 清空画布
+    mSrcRect.set(0, 0, bitmap.getWidth(), bitmap.getHeight());//这里我将2个rect抽离出去，防止重复创建
+    mDstRect.set(0, 0, segview.getWidth(), segview.getHeight());
+    canvas.drawBitmap(bitmap, mSrcRect, mDstRect, mPaint);//将bitmap画到画布上
+    segview.unlockCanvasAndPost(canvas);//解锁画布同时提交
   }
 
   public void customToast(String message){
@@ -1180,4 +1236,87 @@ public class Camera2BasicFragment extends Fragment
           .create();
     }
   }
+
+
+//  //-------------------Agora RTCEngine
+  private RtcEngine mRtcEngine;
+  private int myUid;
+  private volatile boolean remoteOnline=false;
+  private volatile boolean joined = false;
+  private void initAgoraEngine() {
+    try{
+      mRtcEngine = RtcEngine.create(getContext(), getString(R.string.agora_app_id), mRtcEventHandler);
+    }catch (Exception e){
+      Log.e("初始化Agora失败",Log.getStackTraceString(e));
+    }
+  }
+  private final IRtcEngineEventHandler mRtcEventHandler=new IRtcEngineEventHandler() {
+    @Override
+    // 注册 onJoinChannelSuccess 回调。
+    // 本地用户成功加入频道时，会触发该回调。
+    public void onJoinChannelSuccess(String channel, final int uid, int elapsed) {
+      final Activity activity=getActivity();
+      myUid = uid;
+      joined = true;
+      activity.runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+          Log.i("agora", "Join channel success, uid: " + (uid & 0xFFFFFFFFL));
+        }
+      });
+    }
+
+    @Override
+    // 注册 onUserJoined 回调。
+    // 远端用户成功加入频道时，会触发该回调。
+    // 可以在该回调中调用 setupRemoteVideo 方法设置远端视图。
+    public void onUserJoined(final int uid, int elapsed) {
+      remoteOnline=true;
+      final Activity activity=getActivity();
+      activity.runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+          Log.i("agora", "Remote user joined, uid: " + (uid & 0xFFFFFFFFL));
+          setupRemoteVideo(uid);
+        }
+      });
+    }
+
+    @Override
+    // 注册 onUserOffline 回调。
+    // 远端用户离开频道或掉线时，会触发该回调。
+    public void onUserOffline(final int uid, int reason) {
+      remoteOnline=false;
+      final Activity activity=getActivity();
+      activity.runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+          Log.i("agora", "User offline, uid: " + (uid & 0xFFFFFFFFL));
+          mRtcEngine.setupRemoteVideo(new VideoCanvas(null, VideoCanvas.RENDER_MODE_HIDDEN, uid));
+        }
+      });
+    }
+    private void setupRemoteVideo(final int uid) {
+      mRemoteView=RtcEngine.CreateTextureView(getContext());
+      mRtcEngine.setupRemoteVideo(new VideoCanvas(mRemoteView, VideoCanvas.RENDER_MODE_HIDDEN, uid));
+    }
+  };
+
+  public final void joinChannel() {
+    String accessToken = getString(R.string.agora_access_token);
+    if (TextUtils.equals(accessToken, "") || TextUtils.equals(accessToken, "<#YOUR ACCESS TOKEN#>")) {
+      accessToken = null; // default, no token
+    }
+    initAgoraEngine();
+
+//    setUpLocalVideo();
+    int res =mRtcEngine.joinChannel(accessToken, channel, "OpenVCall", Constants.UID);
+      // Usually happens with invalid parameters
+      // Error code description can be found at:
+      // en: https://docs.agora.io/en/Voice/API%20Reference/java/classio_1_1agora_1_1rtc_1_1_i_rtc_engine_event_handler_1_1_error_code.html
+      // cn: https://docs.agora.io/cn/Voice/API%20Reference/java/classio_1_1agora_1_1rtc_1_1_i_rtc_engine_event_handler_1_1_error_code.html
+      Log.d("加入频道信息",String.valueOf(res));
+  }
 }
+
+
