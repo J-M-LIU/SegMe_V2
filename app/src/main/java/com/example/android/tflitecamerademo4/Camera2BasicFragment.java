@@ -48,6 +48,9 @@ import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.ImageReader;
+import android.nfc.Tag;
+import android.opengl.GLES11Ext;
+import android.opengl.GLSurfaceView;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -68,6 +71,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.FrameLayout;
 import android.widget.ListView;
 import android.widget.NumberPicker;
 import android.widget.SeekBar;
@@ -77,6 +81,8 @@ import android.support.v13.app.FragmentCompat;
 import com.example.android.utils.Constants;
 
 import com.example.android.tflitecamerademo.ScriptC_saturation;
+import com.example.android.utils.EglCore;
+import com.example.android.utils.GlUtil;
 
 import org.opencv.dnn.Dnn;
 import org.opencv.dnn.Net;
@@ -97,6 +103,7 @@ import java.util.concurrent.TimeUnit;
 import io.agora.rtc.IRtcEngineEventHandler;
 import io.agora.rtc.RtcEngine;
 
+import io.agora.rtc.video.AgoraVideoFrame;
 import io.agora.rtc.video.VideoCanvas;
 import jp.co.cyberagent.android.gpuimage.GPUImageView;
 import jp.co.cyberagent.android.gpuimage.filter.GPUImageContrastFilter;
@@ -136,6 +143,8 @@ public class Camera2BasicFragment extends Fragment
   public GPUImageToneCurveFilter curve_filter;
   public String channel;
 
+  private FrameLayout localContainer;
+  private FrameLayout remoteContainer;
   InputStream is=null;
   public Bitmap bgd, bgd1, bgd2, bgd3 = null;
   public Boolean init=false;
@@ -155,6 +164,18 @@ public class Camera2BasicFragment extends Fragment
   /** Max preview height that is guaranteed by Camera2 API */
   private static final int MAX_PREVIEW_HEIGHT = 1080;
 
+  private int mTextureID;
+  private SurfaceTexture mPreviewSurfaceTexture;
+  private boolean  mTextureDestroyed;
+  private float[] mTransform = new float[16];
+
+  //  //-------------------Agora RTCEngine
+  private EglCore mEglCore;
+  private RtcEngine mRtcEngine;
+  private int myUid;
+  private volatile boolean remoteOnline=false;
+  //本地用户是否加入频道
+  private volatile boolean joined = false;
   /**
    * {@link TextureView.SurfaceTextureListener} handles several lifecycle events on a {@link
    * TextureView}.
@@ -165,7 +186,10 @@ public class Camera2BasicFragment extends Fragment
 
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
-          openCamera(width, height);
+          mTextureDestroyed = false;
+          mEglCore = new EglCore();
+            Log.d("Tag","surfaceTexture已可用");
+          openCamera(width,height);
         }
 
         @Override
@@ -175,6 +199,7 @@ public class Camera2BasicFragment extends Fragment
 
         @Override
         public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
+          mTextureDestroyed = true;
           return true;
         }
 
@@ -187,7 +212,6 @@ public class Camera2BasicFragment extends Fragment
   private final TextureView.SurfaceTextureListener segviewListener=new TextureView.SurfaceTextureListener() {
     @Override
     public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int i, int i1) {
-
     }
 
     @Override
@@ -205,6 +229,47 @@ public class Camera2BasicFragment extends Fragment
 
     }
   };
+
+  private final SurfaceTexture.OnFrameAvailableListener frameAvailableListener=new SurfaceTexture.OnFrameAvailableListener() {
+    @Override
+    public void onFrameAvailable(SurfaceTexture surfaceTexture) {
+      Log.d("Tag","成功进入onFrameAvailableListener");
+      if(mTextureDestroyed)
+        return;
+      try {
+        mPreviewSurfaceTexture.updateTexImage();
+        mPreviewSurfaceTexture.getTransformMatrix(mTransform);
+        Log.d("Tag","onFrameAvailableListener更新帧数据问题");
+      }
+      catch (Exception e) {
+        e.printStackTrace();
+        Log.d("Tag","错误信息：updateTexImage()出现问题");
+      }
+
+      if (joined) {
+        /**about AgoraVideoFrame, see https://docs.agora.io/en/Video/API%20Reference/java/classio_1_1agora_1_1rtc_1_1video_1_1_agora_video_frame.html*/
+        AgoraVideoFrame frame = new AgoraVideoFrame();
+        frame.textureID = mTextureID;
+        frame.format = AgoraVideoFrame.FORMAT_TEXTURE_OES;
+        frame.transform = mTransform;
+        frame.stride = previewSize.getHeight();
+        frame.height = previewSize.getWidth();
+        frame.eglContext14 = mEglCore.getEGLContext();
+        frame.timeStamp = System.currentTimeMillis();
+        /**Pushes the video frame using the AgoraVideoFrame class and passes the video frame to the Agora SDK.
+         * Call the setExternalVideoSource method and set pushMode as true before calling this
+         * method. Otherwise, a failure returns after calling this method.
+         * @param frame AgoraVideoFrame
+         * @return
+         *   true: The frame is pushed successfully.
+         *   false: Failed to push the frame.
+         * PS:
+         *   In the Communication profile, the SDK does not support textured video frames.*/
+        boolean a = mRtcEngine.pushExternalVideoFrame(frame);
+        Log.e(TAG, "pushExternalVideoFrame:" + a);
+      }
+    }
+  };
   // Model parameter constants. 模型参数
   private String gpu;
   private String cpu;
@@ -213,8 +278,6 @@ public class Camera2BasicFragment extends Fragment
   private String portraitSeg;
   private String colorTrans;
   private String renderMerge;
-
-
 
   /** ID of the current {@link CameraDevice}. */
   private String cameraId;
@@ -234,7 +297,7 @@ public class Camera2BasicFragment extends Fragment
   /** {@link CameraDevice.StateCallback} is called when {@link CameraDevice} changes its state. */
   private final CameraDevice.StateCallback stateCallback =
       new CameraDevice.StateCallback() {
-
+        //CameraDevice描述系统摄像头，类似于早期的Camera类
         @Override
         public void onOpened(@NonNull CameraDevice currentCameraDevice) {
           // This method is called when the camera is opened.  We start camera preview here.
@@ -510,17 +573,28 @@ public class Camera2BasicFragment extends Fragment
 
     // Get references to widgets.
     textureView = (AutoFitTextureView) view.findViewById(R.id.texture);
+    //创建surfaceTexture的TextureID标识
+    mTextureID = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
+    //根据TextureID创建surfaceTexture
+    mPreviewSurfaceTexture=new SurfaceTexture(mTextureID);
+    //创建的surfaceTexture要与所有OpenGLES上下文分离
+    mPreviewSurfaceTexture.detachFromGLContext();
+    //textureView设置surfaceTexture
+    textureView.setSurfaceTexture(mPreviewSurfaceTexture);
+
+    localContainer=(FrameLayout) view.findViewById(R.id.local_container);
+    remoteContainer=(FrameLayout)view.findViewById(R.id.remote_container);
     textView = (TextView) view.findViewById(R.id.text);
     mRemoteView=(TextureView)view.findViewById(R.id.remoteTexture);
     deviceView = (ListView) view.findViewById(R.id.device);
     filterView = (ListView) view.findViewById(R.id.model);
 
     segview=(TextureView)view.findViewById(R.id.segview);
-//    segview.setOpaque(true);
+    segview.setOpaque(false);
     segview.setSurfaceTextureListener(segviewListener);
     //GPUImage
     gpuImageView = (GPUImageView) view.findViewById(R.id.gpuimageview);
-    Bitmap splash = BitmapFactory.decodeResource(getResources(),R.drawable.fusion);
+    Bitmap splash = BitmapFactory.decodeResource(getResources(),R.drawable.tf);
 
     Bitmap newsplash=Bitmap.createScaledBitmap(
               splash,1024 ,1024 , false);
@@ -714,15 +788,22 @@ public class Camera2BasicFragment extends Fragment
     // a camera and start preview from here (otherwise, we wait until the surface is ready in
     // the SurfaceTextureListener).
     if (textureView.isAvailable()) {
+      mTextureDestroyed = false;
+      mEglCore = new EglCore();
+
+      Log.d("Tag","surfaceTexture已可用");
       openCamera(textureView.getWidth(), textureView.getHeight());
+
     } else {
       textureView.setSurfaceTextureListener(surfaceTextureListener);
 
     }
+
   }
 
   @Override
   public void onPause() {
+
     closeCamera();
     stopBackgroundThread();
     super.onPause();
@@ -733,6 +814,12 @@ public class Camera2BasicFragment extends Fragment
     if (segmentor != null) {
       segmentor.close();
     }
+    if(mRtcEngine!=null){
+      mRtcEngine.leaveChannel();
+    }
+    final Activity a=getActivity();
+    a.runOnUiThread(RtcEngine::destroy);
+    mRtcEngine=null;
     super.onDestroy();
   }
 
@@ -744,9 +831,13 @@ public class Camera2BasicFragment extends Fragment
    */
   private void setUpCameraOutputs(int width, int height) {
     Activity activity = getActivity();
+
+    //CameraManager:摄像头管理器，用于打开和关闭系统摄像头
     CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
     try {
+      //getCameraIdList(): 返回当前设备中可用的相机列表
       for (String cameraId : manager.getCameraIdList()) {
+        //getCameraCharacteristics(String cameraId): 根据摄像头id返回该摄像头的相关信息
         CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
 
         // We don't use a front facing camera in this sample.
@@ -863,6 +954,7 @@ public class Camera2BasicFragment extends Fragment
     }
   }
 
+
   /** Opens the camera specified by {@link Camera2BasicFragment#cameraId}. */
   private void openCamera(int width, int height) {
     if (!checkedPermissions && !allPermissionsGranted()) {
@@ -871,7 +963,12 @@ public class Camera2BasicFragment extends Fragment
     } else {
       checkedPermissions = true;
     }
+    //设置与相机相关的成员变量。
     setUpCameraOutputs(width, height);
+    /*
+    配置到“textureView”的必要转换。
+    该方法应该在setUpCameraOutputs中确定摄像机预览大小后调用，同时' textureView '的大小是固定的。
+    */
     configureTransform(width, height);
     Activity activity = getActivity();
     CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
@@ -879,6 +976,9 @@ public class Camera2BasicFragment extends Fragment
       if (!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
         throw new RuntimeException("Time out waiting to lock camera opening.");
       }
+//      openCamera(String cameraId, final CameraDevice.StateCallback callback,Handler handler);
+//      打开指定cameraId的相机。参数callback为相机打开时的回调函数，
+//      参数handler为callback被调用时所在的线程
       manager.openCamera(cameraId, stateCallback, backgroundHandler);
     } catch (CameraAccessException e) {
       Log.e(TAG, "Failed to open Camera", e);
@@ -970,7 +1070,6 @@ public class Camera2BasicFragment extends Fragment
           synchronized (lock) {
             if (runsegmentor) {
               segmentFrame();
-
           }
           }
           backgroundHandler.post(periodicSegment);
@@ -978,19 +1077,31 @@ public class Camera2BasicFragment extends Fragment
       };
 
   /** Creates a new {@link CameraCaptureSession} for camera preview. */
-  private SurfaceTexture surfaceTexture;
   private void createCameraPreviewSession() {
     try {
-      surfaceTexture = textureView.getSurfaceTexture();
+      SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
       assert surfaceTexture != null;
 //       We configure the size of default buffer to be the size of camera preview we want.
-      surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
+      mPreviewSurfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
 //       This is the output Surface we need to start preview.
-      Surface surface = new Surface(surfaceTexture);
-//       We set up a CaptureRequest.Builder with the output Surface.
+//      mPreviewSurfaceTexture.setOnFrameAvailableListener(frameAvailableListener);
+      Surface surface = new Surface(mPreviewSurfaceTexture);
+     /* createCaptureRequest(int templateType)：
+      创建一个新的Capture请求。参数templateType代表了请求类型，请求类型一共分为六种，分别为：
+      TEMPLATE_PREVIEW : 创建预览的请求
+      */
+      //We set up a CaptureRequest.Builder with the output Surface.
+      //CaptureRequest.Builder previewRequestBuilder
+      //CaptureRequest 描述了一次操作请求，拍照、预览等操作都需要先传入CaptureRequest参数，
+      // 具体的参数控制也是通过CameraRequest的成员变量来设置
       previewRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+      //addTarget(Surface outputTarget): 给此次请求添加一个Surface对象作为图像的输出目标
       previewRequestBuilder.addTarget(surface);
-//
+      /*createCaptureSession(List<Surface> outputs,CameraCaptureSession.StateCallback callback,Handler handler)：
+      创建CaptureSession会话。第一个参数 outputs 是一个 List 数组，
+      相机会把捕捉到的图片数据传递给该参数中的 Surface 。
+      第二个参数 StateCallback 是创建会话的状态回调。第三个参数描述了 StateCallback 被调用时所在的线程
+      */
 //       Here, we create a CameraCaptureSession for camera preview.
       cameraDevice.createCaptureSession(
           Arrays.asList(surface),
@@ -1013,6 +1124,13 @@ public class Camera2BasicFragment extends Fragment
 
                 // Finally, we start displaying the camera preview.
                 previewRequest = previewRequestBuilder.build();
+                /*
+                CameraCaptureSession captureSession
+                当需要拍照、预览等功能时，需要先创建该类的实例，然后通过该实例里的方法进行控制
+                setRepeatingRequest(CaptureRequest request,CaptureCallback listener, Handler handler)：
+                根据传入的 CaptureRequest 对象开始一个无限循环的捕捉图像的请求。
+                第二个参数 listener 为捕捉图像的回调，在回调中可以拿到捕捉到的图像信息
+                */
                 captureSession.setRepeatingRequest(
                     previewRequest, captureCallback, backgroundHandler);
               } catch (CameraAccessException e) {
@@ -1067,7 +1185,7 @@ public class Camera2BasicFragment extends Fragment
 
   /** Segments a frame from the preview stream. */
   private void segmentFrame() {
-    if (segmentor == null || getActivity() == null || cameraDevice == null) {
+    if (segmentor == null || getActivity() == null|| cameraDevice == null) {
       // It's important to not call showToast every frame, or else the app will starve and
       // hang. updateActiveModel() already puts an error message up with showToast.
       // showToast("Uninitialized segmentor or invalid context.");
@@ -1077,12 +1195,12 @@ public class Camera2BasicFragment extends Fragment
     Bitmap bitmap = textureView.getBitmap(segmentor.getImageSizeX(), segmentor.getImageSizeY());
     Bitmap fgd = textureView.getBitmap();
     bgd=Bitmap.createScaledBitmap(
-              bgd,textureView.getWidth() ,textureView.getHeight() , false);
+            bgd,textureView.getWidth() ,textureView.getHeight() , false);
     segmentor.segmentFrame(bitmap, mode, fgd, bgd);
 
 
-    Log.d("TV height", String.valueOf(textureView.getHeight()));
-    Log.d("TV width", String.valueOf(textureView.getWidth()));
+    Log.d("TV height", String.valueOf(200));
+    Log.d("TV width", String.valueOf(180));
 
     bitmap.recycle();
     showToast(filterStrings.get(mode)+"    Frame Rate: "+(1000/segmentor.duration));
@@ -1098,12 +1216,11 @@ public class Camera2BasicFragment extends Fragment
       public void run() {
 
         if(segmentor!=null && segmentor.result!=null){
-//          gpuImageView.setImage(segmentor.result); // this loads image on the current thread, should be run in a thread
-           drawBitmap(segmentor.result);
+          gpuImageView.setImage(segmentor.result); // this loads image on the current thread, should be run in a thread
+//           drawBitmap(segmentor.result);
         }
       }
     });
-
 
   }
 
@@ -1139,7 +1256,6 @@ public class Camera2BasicFragment extends Fragment
       filter_idx=filter_idx+1;
 
     switch (filter_idx) {
-
 
       case 0:{
           // Clear all filters
@@ -1179,10 +1295,7 @@ public class Camera2BasicFragment extends Fragment
 
 
   public static Bitmap renderSmooth(Bitmap bgd, Bitmap fgd, Bitmap msk) {
-
-
     Bitmap output = Bitmap.createBitmap(bgd.getWidth(), bgd.getHeight(), bgd.getConfig());
-
     android.support.v8.renderscript.Allocation bgdAllocation = android.support.v8.renderscript.Allocation.createFromBitmap(rs,bgd);
     android.support.v8.renderscript.Allocation fgdAllocation = android.support.v8.renderscript.Allocation.createFromBitmap(rs,fgd);
     android.support.v8.renderscript.Allocation mskAllocation = android.support.v8.renderscript.Allocation.createFromBitmap(rs,msk);
@@ -1237,15 +1350,16 @@ public class Camera2BasicFragment extends Fragment
     }
   }
 
-
-//  //-------------------Agora RTCEngine
-  private RtcEngine mRtcEngine;
-  private int myUid;
-  private volatile boolean remoteOnline=false;
-  private volatile boolean joined = false;
+  //初始化AgoraEngine
   private void initAgoraEngine() {
     try{
       mRtcEngine = RtcEngine.create(getContext(), getString(R.string.agora_app_id), mRtcEventHandler);
+      mRtcEngine.setDefaultAudioRoutetoSpeakerphone(true);
+      mRtcEngine.setEnableSpeakerphone(true);
+
+      mRtcEngine.enableVideo();
+      mRtcEngine.setExternalVideoSource(true,true,true);
+
     }catch (Exception e){
       Log.e("初始化Agora失败",Log.getStackTraceString(e));
     }
@@ -1262,6 +1376,8 @@ public class Camera2BasicFragment extends Fragment
         @Override
         public void run() {
           Log.i("agora", "Join channel success, uid: " + (uid & 0xFFFFFFFFL));
+          Toast toast=Toast.makeText(getContext(),"通话信息：本地用户成功加入频道",Toast.LENGTH_SHORT);
+          toast.show();
         }
       });
     }
@@ -1278,6 +1394,8 @@ public class Camera2BasicFragment extends Fragment
         public void run() {
           Log.i("agora", "Remote user joined, uid: " + (uid & 0xFFFFFFFFL));
           setupRemoteVideo(uid);
+          Toast toast=Toast.makeText(getContext(),"通话信息：远端用户成功加入频道",Toast.LENGTH_SHORT);
+          toast.show();
         }
       });
     }
@@ -1292,15 +1410,27 @@ public class Camera2BasicFragment extends Fragment
         @Override
         public void run() {
           Log.i("agora", "User offline, uid: " + (uid & 0xFFFFFFFFL));
-          mRtcEngine.setupRemoteVideo(new VideoCanvas(null, VideoCanvas.RENDER_MODE_HIDDEN, uid));
+          onRemoteUserLeft(uid);
+          Toast toast=Toast.makeText(getContext(),"通话信息：远端用户离开频道",Toast.LENGTH_SHORT);
+          toast.show();
         }
       });
     }
-    private void setupRemoteVideo(final int uid) {
-      mRemoteView=RtcEngine.CreateTextureView(getContext());
-      mRtcEngine.setupRemoteVideo(new VideoCanvas(mRemoteView, VideoCanvas.RENDER_MODE_HIDDEN, uid));
-    }
   };
+
+  public void onRemoteUserLeft(int uid){
+    final Activity activity=getActivity();
+    activity.runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        Log.i("agora", "User offline, uid: " + (uid & 0xFFFFFFFFL));
+        if(remoteView!=null&&remoteVideoCanvas.uid==uid)
+          remoteContainer.removeAllViews();
+        remoteView=null;
+      }
+    });
+
+  }
 
   public final void joinChannel() {
     String accessToken = getString(R.string.agora_access_token);
@@ -1316,6 +1446,28 @@ public class Camera2BasicFragment extends Fragment
       // en: https://docs.agora.io/en/Voice/API%20Reference/java/classio_1_1agora_1_1rtc_1_1_i_rtc_engine_event_handler_1_1_error_code.html
       // cn: https://docs.agora.io/cn/Voice/API%20Reference/java/classio_1_1agora_1_1rtc_1_1_i_rtc_engine_event_handler_1_1_error_code.html
       Log.d("加入频道信息",String.valueOf(res));
+  }
+
+
+  private TextureView localview;
+  private TextureView remoteView;
+  private VideoCanvas localVideoCanvas;
+  private VideoCanvas remoteVideoCanvas;
+
+  public void setUpLocalVideo(){
+    mRtcEngine.enableVideo();
+    localview=RtcEngine.CreateTextureView(getContext());
+    localContainer.addView(localview);
+    localVideoCanvas = new VideoCanvas(localview, VideoCanvas.RENDER_MODE_HIDDEN, 0);
+    mRtcEngine.setupLocalVideo(localVideoCanvas);
+    mRtcEngine.startPreview();
+  }
+
+  private void setupRemoteVideo(final int uid) {
+    remoteView=RtcEngine.CreateTextureView(getContext());
+    remoteContainer.addView(remoteView);
+    remoteVideoCanvas=new VideoCanvas(remoteView,VideoCanvas.RENDER_MODE_HIDDEN, uid);
+    mRtcEngine.setupRemoteVideo(remoteVideoCanvas);
   }
 }
 
