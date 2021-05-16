@@ -25,25 +25,25 @@
     <string name="nnapi">NNAPI</string>
     <string name="gpu">GPU</string>
     <string name="cpu">CPU</string>
-    <string name="filterLabel">Filters</string>
-    <string name="deviceLabel">Device</string>
-    <string name="videoBokeh">Video Bokeh</string>
-    <string name="portraitSeg">Alpha Blend</string>
-    <string name="colorTrans">Color Transfer</string>
-    <string name="renderMerge">Render Merge</string>
+    <string name="filterLabel">滤镜</string>
+    <string name="deviceLabel">处理器</string>
+    <string name="videoBokeh">背景虚化</string>
+    <string name="portraitSeg">透明混合</string>
+    <string name="colorTrans">颜色变换</string>
+    <string name="renderMerge">渲染合并</string>
 
     <!--Agora-video-->
     <string name="agora_app_id">cb43db8eef8b4bcbb53474836592f725</string>
     <!-- Please leave it if not enable App Certificate -->
     <!-- You can generate a temporary token at https://dashboard.agora.io/projects -->
-    <string name="agora_access_token">006cb43db8eef8b4bcbb53474836592f725IABoQnfUKl9/aoimQ7Eb6TRXEwM+7SzQqnz45RuZsZfhoD37XygAAAAAEABqNCIiB1tqYAEAAQAIW2pg</string>
+    <string name="agora_access_token">006cb43db8eef8b4bcbb53474836592f725IABCwuPhw4cI3dw9Q1rF3cznBZ4cduveVLgab0xtZPIwqawqk9gAAAAAEAD4YHXYWLqhYAEAAQBZuqFg</string>
 
     <string name="legal_characters" translatable="false">abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&amp;()+,-:;&lt;=.>?@[]^_`{|}~</string>
 
     <!-- Main Activity -->
-    <string name="room_name_edit_hint">Fill Your Room Name</string>
-    <string name="enter_room_btn">Enter Room</string>
-    <string name="empty_room_name_toast">Please input a room name</string>
+    <string name="room_name_edit_hint">房间名</string>
+    <string name="enter_room_btn">进入房间</string>
+    <string name="empty_room_name_toast">请输入房间名</string>
     <string name="msg_permission_granted">All necessary permissions granted</string>
     <string name="msg_permission_rejected">All necessary permissions need to be granted</string>
 
