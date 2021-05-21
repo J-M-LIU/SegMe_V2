@@ -36,7 +36,7 @@
     <string name="agora_app_id">cb43db8eef8b4bcbb53474836592f725</string>
     <!-- Please leave it if not enable App Certificate -->
     <!-- You can generate a temporary token at https://dashboard.agora.io/projects -->
-    <string name="agora_access_token">006cb43db8eef8b4bcbb53474836592f725IABCwuPhw4cI3dw9Q1rF3cznBZ4cduveVLgab0xtZPIwqawqk9gAAAAAEAD4YHXYWLqhYAEAAQBZuqFg</string>
+    <string name="agora_access_token">006cb43db8eef8b4bcbb53474836592f725IAD+fH6QglW7K4YiBgaIIhvyYCnEeBB4nJsRfMjEP+U8Tawqk9gAAAAAEAA7EFxEOgupYAEAAQA6C6lg</string>
 
     <string name="legal_characters" translatable="false">abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&amp;()+,-:;&lt;=.>?@[]^_`{|}~</string>
 

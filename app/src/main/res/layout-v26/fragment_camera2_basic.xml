@@ -39,6 +39,16 @@
         android:scaleType="fitStart"
         app:srcCompat="@drawable/dock_vbig" />
         -->
+
+    <FrameLayout
+        android:id="@+id/local_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+    <FrameLayout
+        android:id="@+id/remote_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <jp.co.cyberagent.android.gpuimage.GPUImageView
         android:id="@+id/gpuimageview"
         android:layout_width="match_parent"
@@ -48,17 +58,6 @@
         app:gpuimage_show_loading="false"
         app:gpuimage_surface_type="texture_view" />
 
-
-    <FrameLayout
-        android:id="@+id/local_container"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_above="@+id/details"/>
-    <FrameLayout
-        android:id="@+id/remote_container"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_above="@+id/details"/>
     <TextureView
         android:id="@+id/segview"
         android:layout_width="match_parent"
